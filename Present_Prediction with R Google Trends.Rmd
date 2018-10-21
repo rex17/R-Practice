@@ -1,0 +1,115 @@
+---
+title: "Present Prediction with Google Trends R"
+author: "Shivam Saxena"
+date: "5 October 2018"
+output: html_document
+---
+Choi and Varian paper proposed how Google trends can be used to create predictive models. Ran the example provided in the appendix of paper: o Extracted google trends data from gtrendsR R package provided the category as "Automotive/Vehicle Brands/Ford", from and to time as "2004-01-01 2008-08-30" and type of queries data to be required. GoogleTrendsData had "date" and "hits", it is found that search hits are declined with year.
+
+Ford monthly sales data for the given interval is generated as well. After plotting, it showed that sales were at the peaks during March and April months every year and google trends data also supporting it well. 
+
+https://public.tableau.com/views/ford_sales_data_analysis/seasonalitycheck?:embed=y&:display_count=yes& publish=yes 
+ 
+Added a row to forecast next month in ford sales dataframe.
+Corrected the Date format to "yyyy-mm-dd" for both sales and google trends data then merged sales data with google trends data. 
+Time lag is defined for ford sales dataframe between the research query hits provided in trends data and sales data i.e when purchase is done.
+Data divided for fitting and prediction.
+Performed Exploratory Data Analysis - Testing Autocorrelation & Seasonality with ACF and Ljung-box graph plotted. 
+In Acf the min-max boundaries on crossed on 4 instances out of 15 by small distance. Both showed that residuals forecast errors are close to 0 so not much correlation.  
+Ljung-box given  P-value = 0.3334 that's small correlation. 
+Pearson product-moment correlation is performed to check association between data points calculated p-value = 0.3 (round fig) small correlation for all 3 trends that's with time lag 0, +1 and +2. 
+Linear model fitting is defined and summary plotted to check interquartile ranges, error and degree of freedom employed by model. 
+Predict is called for the next month sales provided trained model and data. 
+ 
+predict.fit = predict(fit, newdata=dat2, se.fit=TRUE )
+show(dat2) 
+##          month  sales    s1     s12  trends1 trends2 trends3 
+## 240  2008-08-01  39.502  67.494  42.502    68     66      68 
+ 
+I would have considered other metrics as well which google trends provides 
+Geographically i.e. at continent or countrywise how the sales have changed over the years.
+Whether any other companies have launched similar specs model as Ford which could cut some sales. ??? Is there new product line Ford is introducing which will target the car owners driving similar car of other company that will turn into profit. Stock Market ups and downs of Ford stock during that interval of time. 
+ 
+Once the models are ready will calculate Mean absolute error from the predictions to evaluate the models. So will have idea about over predicting and under predicting models
+
+```{r}
+library(gtrendsR)
+library(reshape2)
+library(ggplot2)
+
+ford_trends_dat = gtrends(c("Ford"), gprop = "web", time = "2004-01-01 2008-08-30")[[1]]
+ford_trends_dat = dcast(ford_trends_dat, date ~ keyword + geo, value.var = "hits")
+colnames(ford_trends_dat) <- c("date","hits")
+
+ggplot(data=ford_trends_dat , aes(x= date, y = hits, group= 1))+
+  geom_line(color = "blue")
+
+ford_sales_dat = read.csv("ford_sales_data_2004-2008.csv"); 
+
+ggplot(data=ford_sales_dat , aes(x= month, y = sales, group= 1))+
+  geom_line(color = "blue")
+
+ford_sales_dat$month = as.Date(ford_sales_dat$month)
+
+##### get ready for the forecasting; 
+ford_sales_dat = rbind(ford_sales_dat, ford_sales_dat[nrow(ford_sales_dat), ]); 
+ford_sales_dat[nrow(ford_sales_dat), 'month'] = as.Date('2008-09-01'); 
+ford_sales_dat[nrow(ford_sales_dat), -1] <- rep(NA,ncol(ford_sales_dat)-1);
+
+##### Define Predictors - Time Lags; 
+ford_sales_dat$s1 = c(NA, ford_sales_dat$sales[1:(nrow(ford_sales_dat)-1)]); 
+ford_sales_dat$s12 = c(rep(NA, 12), ford_sales_dat$sales[1:(nrow(ford_sales_dat)-12)]);
+
+##### Plot Sales & Google Trends data; 
+par(mfrow=c(2,1)); 
+plot(sales ~ month, data= ford_sales_dat, lwd=2, type='l', main='Ford Sales', ylab='Sales', xlab='Time'); 
+plot(hits ~ date, data= ford_trends_dat, lwd=2, type='l', main='Google Trends: Ford', ylab='Percentage Change', xlab='Time');
+
+##### Merge Sales Data w/ Google Trends Data 
+ford_trends_dat$month = as.Date(paste(substr(ford_trends_dat$date, 1, 7), '01', sep='-')) 
+ford_sales_dat = merge(ford_sales_dat, ford_trends_dat);
+
+##### Define Predictor - Google Trends 
+## t.lag defines the time lag between the research and purchase. 
+## 	t.lag = 0 if you want to include last week of the previous month and 
+## 		1st-2nd week of the corresponding month 
+## 	t.lag = 1 if you want to include 1st-3rd week of the corresponding month 
+t.lag = 1; 
+id = which(ford_sales_dat$month[-1] != ford_sales_dat$month[-nrow(ford_sales_dat)]); 
+mdat = ford_sales_dat[id + 1, c('month', 'sales', 's1', 's12')];
+mdat$trends1 = ford_sales_dat$hits[id + t.lag]; 
+mdat$trends2 = ford_sales_dat$hits[id + t.lag + 1]; 
+mdat$trends3 = ford_sales_dat$hits[id + t.lag + 2];
+
+##### Divide data by two parts - model fitting & prediction 
+dat1 = mdat[1:(nrow(mdat)-1), ] 
+dat2 = mdat[nrow(mdat), ]
+
+##### Exploratory Data Analysis 
+## Testing Autocorrelation & Seasonality 
+acf(log(dat1$sales)); 
+Box.test(log(dat1$sales), type="Ljung-Box") 
+
+## Testing Correlation 
+plot(y = log(dat1$sales), x = dat1$trends1, main='', pch=19,
+     ylab='log(Sales)', xlab= 'Google Trends - 1st week') 
+abline(lm(log(dat1$sales) ~ dat1$trends1), lwd=2, col=2) 
+cor.test(y = log(dat1$sales), x = dat1$trends1) 
+cor.test(y = log(dat1$sales), x = dat1$trends2) 
+cor.test(y = log(dat1$sales), x = dat1$trends3)
+
+##### Fit Model; 
+fit = lm(log(sales) ~ log(s1) + log(s12) + trends1, data=dat1); 
+summary(fit)
+
+##### Diagnostic Plot 
+par(mfrow=c(2,2)); 
+plot(fit)
+
+#### Prediction for the next month; 
+predict.fit = predict(fit, newdata=dat2, se.fit=TRUE)
+
+show(dat2)
+
+```
+
