@@ -1,0 +1,108 @@
+---
+title: "EuroCrime Stats 2015 Analysis with R"
+author: "Shivam Saxena"
+date: "9 October 2018"
+output:
+  html_document: default
+---
+
+### Data Load
+```{r }
+library(knitr)
+library(kableExtra)
+euro_crimes_data = read.csv("EurostatCrime2015.csv",header = TRUE)
+colnames(euro_crimes_data) <- c("Country","Assault",	"Intentional homicide",	"Rape",	"Robbery",	"Sexual assault",	"Sexual violence",	"Theft")
+```
+
+### Knowing the Size and Structure of Data
+```{r}
+dim(euro_crimes_data)
+str(euro_crimes_data)
+```
+
+### Grouping Similar Columns Rape , Sexual Assault and Sexual Violence clubbed to New Column Sex.crime
+```{r}
+euro_crimes_data$Sex.crime <- euro_crimes_data$Rape + euro_crimes_data$`Sexual assault` + euro_crimes_data$`Sexual violence` 
+kable(euro_crimes_data) %>%
+  kable_styling(bootstrap_options = "striped", font_size = 10)
+```
+
+#### Removed Columns Rape , Sexual Assault and Sexual Violence 
+```{r}
+crimes_dat2 = subset(euro_crimes_data, select = -c(Rape,`Sexual assault`,`Sexual violence`) )
+```
+
+
+### Data Cleaning , checking rows having 'NA' values
+```{r}
+missing_Data = crimes_dat2[rowSums(is.na(crimes_dat2)) > 0,]
+kable(missing_Data) %>%
+  kable_styling(bootstrap_options = "striped", font_size = 12)
+```
+
+### 'NA' tuples removed
+```{r}
+crimes_dat_na_cleaned = crimes_dat2[complete.cases(crimes_dat2),]
+kable(crimes_dat_na_cleaned) %>%
+  kable_styling(bootstrap_options = "striped", font_size = 12)
+```
+
+### Cleaned DataFrame Size
+```{r}
+dim(crimes_dat_na_cleaned)
+```
+
+# Analysis
+
+### Theft was the most common crime
+```{r}
+irl_crime_dat = subset(euro_crimes_data,euro_crimes_data["Country"] == "Ireland")
+colnames(irl_crime_dat)[apply(irl_crime_dat,1,which.max)]
+
+```
+
+### least 3 common crimes are:Sexual assault , Rape	, Intentional homicide
+```{r}
+irl_crime_dat <- irl_crime_dat[1,2:9]
+irl_crime_dat = sort(irl_crime_dat,decreasing = TRUE)
+
+kable(irl_crime_dat[,6:8]) %>%
+  kable_styling(bootstrap_options = "striped", font_size = 12)
+```
+
+### Highest record of offences - Sweden
+```{r}
+euro_crimes_data$total_offences <- rowSums(euro_crimes_data[2:9])
+ordered_euro_crimes_data = euro_crimes_data[order(euro_crimes_data$total_offences,decreasing = TRUE,na.last = NA),]
+kable(ordered_euro_crimes_data[1,]) %>%
+  kable_styling(bootstrap_options = "striped", font_size = 12)
+
+```
+
+# Most Common Crime Across Europe
+
+__A new row can be generated from the given data which will contain the total occurences of each crime type across all the countries.__ 
+```{r}
+total_euro_crimes_data <- colSums(euro_crimes_data[2:9],na.rm = TRUE)
+total_euro_crimes_data <- data.frame(total_euro_crimes_data)
+total_euro_crimes_data <- cbind( crime_types = rownames(total_euro_crimes_data), total_euro_crimes_data)
+rownames(total_euro_crimes_data) <- 1:nrow(total_euro_crimes_data)
+```
+
+__It will help to interpret which crime is most common across Europe Continent.__  
+
+__Generated Barplot:__  
+
+```{r}
+x <- total_euro_crimes_data$crime_types
+y <- total_euro_crimes_data$total_euro_crimes_data
+
+library(ggplot2)
+# bar plot showing the crimes which are most occurred in europe
+ggplot(data=total_euro_crimes_data, aes(x=crime_types, y=total_euro_crimes_data)) +
+  geom_bar(stat="identity", fill="steelblue")+
+   coord_flip() +
+  geom_text(aes(label=total_euro_crimes_data), position=position_dodge(width=0.9), vjust=-0.25)
+```
+
+__From the plot it is clearly shown that "Theft" is the most common across EU while "Intentional Homicide" is least common.__
